@@ -1,0 +1,260 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <algorithm>
+#include <iomanip>
+
+using namespace std;
+
+class InvalidMarksException : public exception {
+private:
+    string message;
+
+public:
+    InvalidMarksException(const string& msg) : message(msg) {}
+
+    const char* what() const noexcept override {
+        return message.c_str();
+    }
+};
+
+template <typename T>
+T calculateSum(T m1, T m2, T m3) {
+    return m1 + m2 + m3;
+}
+
+class Student {
+protected:
+    int rollNo;
+    string name;
+
+public:
+    Student(int r = 0, string n = "") : rollNo(r), name(n) {}
+
+    int getRollNo() const { return rollNo; }
+    string getName() const { return name; }
+
+    virtual void display() const {
+        cout << "Roll No: " << rollNo << " | Name: " << name;
+    }
+
+    virtual ~Student() {}
+};
+
+class Result : public Student {
+private:
+    float mark1, mark2, mark3;
+    float total;
+    string status;
+
+    void validateMarks(float m) {
+        if (m < 0.0f || m > 100.0f) {
+            throw InvalidMarksException("Invalid marks entered! Marks must be between 0 and 100.");
+        }
+    }
+
+public:
+    Result(int r = 0, string n = "", float m1 = 0, float m2 = 0, float m3 = 0)
+        : Student(r, n) {
+        setMarks(m1, m2, m3);
+    }
+
+    void setMarks(float m1, float m2, float m3) {
+        validateMarks(m1);
+        validateMarks(m2);
+        validateMarks(m3);
+
+        mark1 = m1;
+        mark2 = m2;
+        mark3 = m3;
+        total = calculateSum(mark1, mark2, mark3);
+
+        if (mark1 >= 40 && mark2 >= 40 && mark3 >= 40) {
+            status = "PASS";
+        } else {
+            status = "FAIL";
+        }
+    }
+
+    float getTotal() const { return total; }
+    string getStatus() const { return status; }
+
+    void display() const override {
+        Student::display();
+        cout << fixed << setprecision(1)
+             << " | Marks: [" << mark1 << ", " << mark2 << ", " << mark3 << "]"
+             << " | Total: " << total << "/300"
+             << " | Result: " << status << endl;
+    }
+
+    void saveToFile(ofstream& out) const {
+        out << rollNo << "\n"
+            << name << "\n"
+            << mark1 << " " << mark2 << " " << mark3 << "\n";
+    }
+
+    static bool loadFromFile(ifstream& in, Result& res) {
+        int r;
+        string n;
+        float m1, m2, m3;
+
+        if (!(in >> r)) return false;
+        in.ignore();
+        getline(in, n);
+        if (!(in >> m1 >> m2 >> m3)) return false;
+
+        res = Result(r, n, m1, m2, m3);
+        return true;
+    }
+};
+
+void saveAllRecords(const vector<Result>& records, const string& filename) {
+    ofstream outFile(filename);
+
+    if (!outFile) {
+        cerr << "Error: Could not open file for writing.\n";
+        return;
+    }
+
+    for (const auto& rec : records) {
+        rec.saveToFile(outFile);
+    }
+
+    outFile.close();
+    cout << "Records successfully saved to " << filename << ".\n";
+}
+
+void loadAllRecords(vector<Result>& records, const string& filename) {
+    ifstream inFile(filename);
+
+    if (!inFile) {
+        cerr << "Error: Could not open file for reading (or file does not exist yet).\n";
+        return;
+    }
+
+    records.clear();
+    Result temp;
+
+    try {
+        while (Result::loadFromFile(inFile, temp)) {
+            records.push_back(temp);
+        }
+
+        cout << "Loaded " << records.size() << " record(s) from " << filename << ".\n";
+    } catch (const InvalidMarksException& e) {
+        cerr << "File Data Error: " << e.what() << endl;
+    }
+
+    inFile.close();
+}
+
+int main() {
+    vector<Result> studentRecords;
+    const string filename = "student_results.txt";
+    int choice;
+
+    do {
+        cout << "\n--- Student Result Management System ---\n";
+        cout << "1. Add Student Record\n";
+        cout << "2. Display All Records (Polymorphic Display)\n";
+        cout << "3. Filter Students Scoring Above Specified Total Marks\n";
+        cout << "4. Save Records to File\n";
+        cout << "5. Load Records from File\n";
+        cout << "6. Exit\n";
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        switch (choice) {
+            case 1: {
+                int roll;
+                string name;
+                float m1, m2, m3;
+
+                cout << "Enter Roll Number: ";
+                cin >> roll;
+                cin.ignore();
+
+                cout << "Enter Student Name: ";
+                getline(cin, name);
+
+                cout << "Enter Marks for 3 Subjects (0-100): ";
+                cin >> m1 >> m2 >> m3;
+
+                try {
+                    Result res(roll, name, m1, m2, m3);
+                    studentRecords.push_back(res);
+                    cout << "Student record added successfully!\n";
+                } catch (const InvalidMarksException& e) {
+                    cerr << "Exception Caught: " << e.what() << endl;
+                }
+
+                break;
+            }
+
+            case 2: {
+                if (studentRecords.empty()) {
+                    cout << "No student records available.\n";
+                } else {
+                    cout << "\n--- All Student Results ---\n";
+
+                    for (const auto& rec : studentRecords) {
+                        const Student* ptr = &rec;
+                        ptr->display();
+                    }
+                }
+
+                break;
+            }
+
+            case 3: {
+                if (studentRecords.empty()) {
+                    cout << "No student records available to filter.\n";
+                    break;
+                }
+
+                float threshold;
+                cout << "Enter minimum total marks threshold (out of 300): ";
+                cin >> threshold;
+
+                vector<Result> highScorers;
+
+                copy_if(studentRecords.begin(), studentRecords.end(), back_inserter(highScorers),
+                        [threshold](const Result& r) {
+                            return r.getTotal() > threshold;
+                        });
+
+                if (highScorers.empty()) {
+                    cout << "No students scored above " << threshold << ".\n";
+                } else {
+                    cout << "\n--- Students Scoring Above " << threshold << " ---\n";
+
+                    for_each(highScorers.begin(), highScorers.end(), [](const Result& r) {
+                        r.display();
+                    });
+                }
+
+                break;
+            }
+
+            case 4:
+                saveAllRecords(studentRecords, filename);
+                break;
+
+            case 5:
+                loadAllRecords(studentRecords, filename);
+                break;
+
+            case 6:
+                cout << "Exiting program...\n";
+                break;
+
+            default:
+                cout << "Invalid choice. Please try again.\n";
+        }
+
+    } while (choice != 6);
+
+    return 0;
+}
